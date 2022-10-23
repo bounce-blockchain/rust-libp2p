@@ -40,6 +40,8 @@ pub mod rsa;
 #[cfg(feature = "secp256k1")]
 pub mod secp256k1;
 
+pub mod bls12381;
+
 pub mod error;
 
 use self::error::*;
@@ -77,6 +79,7 @@ pub enum Keypair {
     /// An ECDSA keypair.
     #[cfg(feature = "ecdsa")]
     Ecdsa(ecdsa::Keypair),
+    Bls12381(bls12381::Keypair),
 }
 
 impl Keypair {
@@ -95,6 +98,10 @@ impl Keypair {
     #[cfg(feature = "ecdsa")]
     pub fn generate_ecdsa() -> Keypair {
         Keypair::Ecdsa(ecdsa::Keypair::generate())
+    }
+
+    pub fn generate_bls12381() -> Keypair {
+        Keypair::Bls12381(bls12381::Keypair::generate())
     }
 
     /// Decode an keypair from a DER-encoded secret key in PKCS#8 PrivateKeyInfo
@@ -128,6 +135,7 @@ impl Keypair {
             Secp256k1(ref pair) => pair.secret().sign(msg),
             #[cfg(feature = "ecdsa")]
             Ecdsa(ref pair) => Ok(pair.secret().sign(msg)),
+            Bls12381(ref pair) => Ok(pair.secret().sign(msg)),
         }
     }
 
@@ -142,6 +150,7 @@ impl Keypair {
             Secp256k1(pair) => PublicKey::Secp256k1(pair.public().clone()),
             #[cfg(feature = "ecdsa")]
             Ecdsa(pair) => PublicKey::Ecdsa(pair.public().clone()),
+            Bls12381(pair) => PublicKey::Bls12381(pair.public().clone()),
         }
     }
 
@@ -170,6 +179,11 @@ impl Keypair {
             Self::Ecdsa(_) => {
                 return Err(DecodingError::new(
                     "Encoding ECDSA key into Protobuf is unsupported",
+                ))
+            }
+            Self::Bls12381(_) => {
+                return Err(DecodingError::new(
+                    "Encoding BLS12381 key into Protobuf is unsupported",
                 ))
             }
         };
@@ -202,6 +216,9 @@ impl Keypair {
             keys_proto::KeyType::Ecdsa => Err(DecodingError::new(
                 "Decoding ECDSA key from Protobuf is unsupported.",
             )),
+            keys_proto::KeyType::Bls12381 => Err(DecodingError::new(
+                "Decoding BLS12381 key from Protobuf is unsupported.",
+            )),
         }
     }
 }
@@ -227,6 +244,7 @@ pub enum PublicKey {
     /// A public ECDSA key.
     #[cfg(feature = "ecdsa")]
     Ecdsa(ecdsa::PublicKey),
+    Bls12381(bls12381::PublicKey),
 }
 
 impl PublicKey {
@@ -245,6 +263,7 @@ impl PublicKey {
             Secp256k1(pk) => pk.verify(msg, sig),
             #[cfg(feature = "ecdsa")]
             Ecdsa(pk) => pk.verify(msg, sig),
+            Bls12381(pk) => pk.verify(msg, sig),
         }
     }
 
@@ -301,6 +320,10 @@ impl From<&PublicKey> for keys_proto::PublicKey {
                 r#type: keys_proto::KeyType::Ecdsa as i32,
                 data: key.encode_der(),
             },
+            PublicKey::Bls12381(key) => keys_proto::PublicKey {
+                r#type: keys_proto::KeyType::Bls12381 as i32,
+                data: key.encode().to_vec(),
+            },
         }
     }
 }
@@ -342,6 +365,9 @@ impl TryFrom<keys_proto::PublicKey> for PublicKey {
             keys_proto::KeyType::Ecdsa => {
                 log::debug!("support for ECDSA was disabled at compile-time");
                 Err(DecodingError::new("Unsupported"))
+            }
+            keys_proto::KeyType::Bls12381 => {
+                bls12381::PublicKey::decode(&pubkey.data).map(PublicKey::Bls12381)
             }
         }
     }
